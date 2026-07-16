@@ -2,11 +2,11 @@ name: TCA Member News Check
 
 on:
   schedule:
-    - cron: "0 21 * * *"
-  workflow_dispatch: {}
+    - cron: "0 */3 * * *"  # every 3 hours, on the hour (UTC)
+  workflow_dispatch: {}  # lets you trigger it manually from the Actions tab
 
 permissions:
-  contents: write
+  contents: write  # needed to commit the updated state.json / feed.xml back to the repo
 
 jobs:
   check-news:
