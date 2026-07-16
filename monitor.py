@@ -2,9 +2,9 @@
 """
 TCA Member News Monitor
 ------------------------
-Checks Google News for mentions of Tech Council of Australia members that
-look like "good news" (awards, grants, funding, recognition, etc.), dedupes
-against previously-seen stories, and produces:
+Checks Google News for ANY mention of Tech Council of Australia members
+(positive or negative), keeps only stories published by Australian news
+sources, dedupes against previously-seen stories, and produces:
 
   1. output/feed.xml   - an RSS feed you can subscribe to in any feed reader
   2. output/digest.html - a ready-to-send HTML email digest of NEW items only
@@ -35,7 +35,7 @@ from feedgen.feed import FeedGenerator
 # --------------------------------------------------------------------------
 BASE_DIR = Path(__file__).parent
 MEMBERS_FILE = BASE_DIR / "members.json"
-KEYWORDS_FILE = BASE_DIR / "keywords.json"
+DOMAINS_FILE = BASE_DIR / "domains.json"
 STATE_FILE = BASE_DIR / "state.json"
 OUTPUT_DIR = BASE_DIR / "output"
 
@@ -44,9 +44,9 @@ MAX_SEEN_LINKS = 5000  # cap state file size
 REQUEST_DELAY_SECONDS = 1.0  # be polite to Google News between requests
 GOOGLE_NEWS_LOCALE = "hl=en-AU&gl=AU&ceid=AU:en"
 
-FEED_TITLE = "TCA Member Good News"
+FEED_TITLE = "TCA Member News"
 FEED_LINK = "https://techcouncil.com.au/members/"
-FEED_DESC = "Automated feed of positive/newsworthy mentions of Tech Council of Australia members."
+FEED_DESC = "Automated feed of Australian news mentions of Tech Council of Australia members."
 
 
 def load_json(path):
@@ -67,13 +67,11 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 
-def build_query(member, keywords):
-    # Wrap member name in quotes for exact match, OR-group of keywords,
-    # and bias toward Australia to cut down on irrelevant global stories
-    # for members that are big global brands (Google, Apple, Microsoft...).
-    kw_group = " OR ".join(keywords)
-    query = f'"{member}" ({kw_group}) Australia'
-    return query
+def build_query(member):
+    # Exact match on the member name. No keyword filtering - we want ANY
+    # mention, positive or negative. Australian-only filtering happens
+    # after fetching, based on the publisher's actual domain.
+    return f'"{member}"'
 
 
 def fetch_google_news_rss(query, retries=3):
@@ -101,18 +99,39 @@ def entry_is_recent(entry, cutoff):
     return entry_dt >= cutoff
 
 
-def entry_passes_exclude_filter(entry, exclude_keywords):
-    text = (entry.get("title", "") + " " + entry.get("summary", "")).lower()
-    return not any(bad.lower() in text for bad in exclude_keywords)
+def get_source_domain(entry):
+    """
+    Google News RSS items include a <source url="..."> tag pointing at the
+    publisher's own site - this is far more reliable than the <link>, which
+    is often a news.google.com redirect URL rather than the real article URL.
+    Falls back to the link's domain if no source tag is present.
+    """
+    source = entry.get("source")
+    href = source.get("href") if source else None
+    if not href:
+        href = entry.get("link", "")
+    netloc = urllib.parse.urlparse(href).netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    return netloc
 
 
-def collect_new_stories(members, keywords, exclude_keywords, state):
+def entry_is_australian(entry, extra_domains):
+    domain = get_source_domain(entry)
+    if not domain:
+        return False
+    if domain.endswith(".au"):
+        return True
+    return any(domain == d or domain.endswith("." + d) for d in extra_domains)
+
+
+def collect_new_stories(members, extra_domains, state):
     cutoff = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     seen = set(state["seen_links"])
     new_items = []
 
     for i, member in enumerate(members, 1):
-        query = build_query(member, keywords)
+        query = build_query(member)
         print(f"[{i}/{len(members)}] Checking: {member}")
         feed = fetch_google_news_rss(query)
         time.sleep(REQUEST_DELAY_SECONDS)
@@ -125,15 +144,16 @@ def collect_new_stories(members, keywords, exclude_keywords, state):
                 continue
             if not entry_is_recent(entry, cutoff):
                 continue
-            if not entry_passes_exclude_filter(entry, exclude_keywords):
+            if not entry_is_australian(entry, extra_domains):
                 continue
 
+            source_info = entry.get("source")
             new_items.append({
                 "member": member,
                 "title": entry.get("title", "(no title)"),
                 "link": link,
                 "published": entry.get("published", ""),
-                "source": entry.get("source", {}).get("title", "") if entry.get("source") else "",
+                "source": source_info.get("title", "") if source_info else get_source_domain(entry),
                 "summary": entry.get("summary", ""),
             })
             seen.add(link)
@@ -203,7 +223,7 @@ def write_html_digest(new_items, path):
         html = f"""
         <html><body>
         <h2>TCA Member News — {datetime.now().strftime('%d %b %Y')}</h2>
-        <p>{len(new_items)} new mention(s) found in the last {LOOKBACK_HOURS} hours:</p>
+        <p>{len(new_items)} new mention(s) found in the last {LOOKBACK_HOURS} hours (Australian sources only):</p>
         <table style="width:100%;border-collapse:collapse;">{rows}</table>
         </body></html>
         """
@@ -244,12 +264,11 @@ def send_email(html_body, new_items):
 
 def main():
     members = load_json(MEMBERS_FILE)
-    kw = load_json(KEYWORDS_FILE)
+    domains_cfg = load_json(DOMAINS_FILE)
+    extra_domains = [d.lower() for d in domains_cfg.get("extra_domains", [])]
     state = load_state()
 
-    new_items, state = collect_new_stories(
-        members, kw["good_news_keywords"], kw["exclude_keywords"], state
-    )
+    new_items, state = collect_new_stories(members, extra_domains, state)
     save_state(state)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
@@ -259,7 +278,7 @@ def main():
 
     print(f"\nDone. {len(new_items)} new item(s) found.")
     for item in new_items:
-        print(f"  - [{item['member']}] {item['title']}")
+        print(f"  - [{item['member']}] {item['title']} ({item['source']})")
 
 
 if __name__ == "__main__":
