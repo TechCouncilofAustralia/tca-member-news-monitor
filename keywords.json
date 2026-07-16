@@ -1,0 +1,17 @@
+{
+  "good_news_keywords": [
+    "award", "awarded", "awards", "wins", "won", "winner",
+    "grant", "grant funding", "funding round", "raises", "raised", "series a",
+    "series b", "series c", "seed round", "investment",
+    "named", "recognised", "recognized", "honoured", "honored", "honour", "honor",
+    "milestone", "breakthrough", "launches", "unveils", "expands", "expansion",
+    "partnership", "partners with", "ipo", "listing", "acquires", "acquisition",
+    "appointed", "appoints", "ceo of the year", "top 100", "fastest growing",
+    "best place to work", "innovation award", "excellence award", "hackathon",
+    "scholarship", "philanthropy", "donates", "donation"
+  ],
+  "exclude_keywords": [
+    "layoffs", "lawsuit", "sued", "fraud", "data breach", "hack", "outage",
+    "resigns", "fired", "scandal", "investigation", "recall", "downturn"
+  ]
+}
