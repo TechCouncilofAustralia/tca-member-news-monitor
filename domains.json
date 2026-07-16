@@ -1,0 +1,11 @@
+{
+  "_comment": "Any domain ending in .au (e.g. .com.au, .net.au, .gov.au, .org.au) is automatically treated as Australian. 'extra_domains' below is for well-known Australian outlets that do NOT use a .au domain - add more here if you notice a legit AU source getting filtered out.",
+  "extra_domains": [
+    "afr.com",
+    "innovationaus.com",
+    "startupdaily.net",
+    "which-50.com",
+    "itwire.com",
+    "theconversation.com"
+  ]
+}
