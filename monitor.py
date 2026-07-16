@@ -162,21 +162,14 @@ def collect_new_stories(members, extra_domains, state):
     return new_items, state
 
 
-def write_rss_feed(new_items, existing_feed_path):
+def get_combined_items(new_items, existing_feed_path, max_items=200):
     """
-    Builds output/feed.xml. Keeps previously published items too (read from
-    the existing feed file if present) so the feed stays a rolling history,
-    not just today's batch.
+    Merges today's new items with whatever was already in the feed file,
+    so both the RSS feed and the public webpage show a rolling history,
+    not just the latest batch. Used by write_rss_feed and write_public_page.
     """
-    fg = FeedGenerator()
-    fg.title(FEED_TITLE)
-    fg.link(href=FEED_LINK, rel="alternate")
-    fg.description(FEED_DESC)
-    fg.language("en-au")
-
     combined = list(new_items)
 
-    # carry over entries from the previous feed file, if it exists
     if existing_feed_path.exists():
         old_feed = feedparser.parse(str(existing_feed_path))
         existing_links = {item["link"] for item in new_items}
@@ -191,10 +184,20 @@ def write_rss_feed(new_items, existing_feed_path):
                     "summary": entry.get("summary", ""),
                 })
 
-    # keep feed to a reasonable rolling size (most recent 200 items)
-    combined = combined[:200]
+    return combined[:max_items]
 
-    for item in combined:
+
+def write_rss_feed(combined_items, existing_feed_path):
+    """
+    Builds output/feed.xml from the already-merged rolling list of items.
+    """
+    fg = FeedGenerator()
+    fg.title(FEED_TITLE)
+    fg.link(href=FEED_LINK, rel="alternate")
+    fg.description(FEED_DESC)
+    fg.language("en-au")
+
+    for item in combined_items:
         fe = fg.add_entry()
         fe.title(f"[{item['member']}] {item['title']}")
         fe.link(href=item["link"])
@@ -203,6 +206,49 @@ def write_rss_feed(new_items, existing_feed_path):
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     fg.rss_file(str(existing_feed_path))
+
+
+def write_public_page(combined_items, path):
+    """
+    Builds a plain webpage (index.html, at the repo root) listing the
+    rolling history of mentions - no RSS reader or login needed. Meant to
+    be served for free via GitHub Pages.
+    """
+    if not combined_items:
+        rows_html = "<p>No mentions found yet.</p>"
+    else:
+        rows_html = "\n".join(
+            f"""
+            <tr>
+              <td style="padding:10px;border-bottom:1px solid #eee;font-weight:bold;white-space:nowrap;">{item['member']}</td>
+              <td style="padding:10px;border-bottom:1px solid #eee;">
+                <a href="{item['link']}" target="_blank" rel="noopener">{item['title']}</a><br>
+                <span style="color:#888;font-size:12px;">{item['source']} — {item['published']}</span>
+              </td>
+            </tr>"""
+            for item in combined_items
+        )
+
+    html = f"""<!DOCTYPE html>
+<html lang="en-au">
+<head>
+<meta charset="utf-8">
+<title>TCA Member News</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="font-family: -apple-system, Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; color: #222;">
+  <h1>TCA Member News</h1>
+  <p style="color:#666;">Australian news mentions of Tech Council of Australia members.
+  Last updated: {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M UTC')}.
+  Showing the most recent {len(combined_items)} item(s).</p>
+  <table style="width:100%;border-collapse:collapse;">
+    {rows_html}
+  </table>
+</body>
+</html>
+"""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
 
 
 def write_html_digest(new_items, path):
@@ -272,7 +318,11 @@ def main():
     save_state(state)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
-    write_rss_feed(new_items, OUTPUT_DIR / "feed.xml")
+    feed_path = OUTPUT_DIR / "feed.xml"
+    combined_items = get_combined_items(new_items, feed_path)
+
+    write_rss_feed(combined_items, feed_path)
+    write_public_page(combined_items, BASE_DIR / "index.html")
     html_body = write_html_digest(new_items, OUTPUT_DIR / "digest.html")
     send_email(html_body, new_items)
 
