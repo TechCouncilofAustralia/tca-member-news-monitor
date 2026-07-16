@@ -1,41 +1,40 @@
 name: TCA Member News Check
 
-   on:
-     schedule:
-       # 21:00 UTC = 7am/8am AEST/AEDT next day - adjust to taste
-       - cron: "0 21 * * *"
-     workflow_dispatch: {}  # lets you trigger it manually from the Actions tab
+on:
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch: {}
 
-   permissions:
-     contents: write  # needed to commit the updated state.json / feed.xml back to the repo
+permissions:
+  contents: write
 
-   jobs:
-     check-news:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
+jobs:
+  check-news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-         - uses: actions/setup-python@v5
-           with:
-             python-version: "3.11"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-         - name: Install dependencies
-           run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-         - name: Run monitor
-           env:
-             SMTP_HOST: ${{ secrets.SMTP_HOST }}
-             SMTP_PORT: ${{ secrets.SMTP_PORT }}
-             SMTP_USER: ${{ secrets.SMTP_USER }}
-             SMTP_PASS: ${{ secrets.SMTP_PASS }}
-             EMAIL_TO: ${{ secrets.EMAIL_TO }}
-             EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-           run: python monitor.py
+      - name: Run monitor
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: python monitor.py
 
-         - name: Commit updated state and output files
-           run: |
-             git config user.name "tca-news-bot"
-             git config user.email "actions@github.com"
-             git add state.json output/
-             git diff --cached --quiet || git commit -m "Daily news check $(date -u +%Y-%m-%d)"
-             git push
+      - name: Commit updated state and output files
+        run: |
+          git config user.name "tca-news-bot"
+          git config user.email "actions@github.com"
+          git add state.json output/
+          git diff --cached --quiet || git commit -m "Daily news check $(date -u +%Y-%m-%d)"
+          git push
