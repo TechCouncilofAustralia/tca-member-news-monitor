@@ -35,6 +35,6 @@ jobs:
         run: |
           git config user.name "tca-news-bot"
           git config user.email "actions@github.com"
-          git add state.json output/
+          git add state.json output/ index.html
           git diff --cached --quiet || git commit -m "Daily news check $(date -u +%Y-%m-%d)"
           git push
